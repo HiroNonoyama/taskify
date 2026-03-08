@@ -20,3 +20,20 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// Intercept app.notifee:core resolution: serve from the local AAR bundled inside
+// the @notifee/react-native npm package to avoid a slow/unreachable JitPack request.
+allprojects {
+    def notifeeLibs = new File(rootDir, "../node_modules/@notifee/react-native/android/libs").toURI()
+    configurations.all {
+        resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == 'app.notifee' && details.requested.name == 'core') {
+                details.useVersion '202108261754'
+            }
+        }
+    }
+    repositories {
+        // Must be declared before JitPack so Gradle resolves app.notifee:core locally
+        maven { url notifeeLibs }
+    }
+}

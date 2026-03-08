@@ -2,13 +2,27 @@ pluginManagement {
     includeBuild("../node_modules/@react-native/gradle-plugin")
 }
 
-plugins {
-    id("com.facebook.react.settings")
+// Route app.notifee:core exclusively to the local AAR that ships with the npm package,
+// so that no JitPack network request is made during the build.
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_PROJECT)
+    repositories {
+        exclusiveContent {
+            forRepository {
+                maven {
+                    name = 'notifeeLocal'
+                    url new File(rootDir, "../node_modules/@notifee/react-native/android/libs").toURI()
+                }
+            }
+            filter { includeGroup 'app.notifee' }
+        }
+        google()
+        mavenCentral()
+    }
 }
 
-extensions.configure(com.facebook.react.ReactSettingsExtension) { ex ->
-    ex.autolinkLibrariesFromCommand()
-}
+apply from: file("../node_modules/@react-native-community/cli-platform-android/native_modules.gradle");
+applyNativeModulesSettingsGradle(settings)
 
 rootProject.name = 'Taskify'
 include ':app'

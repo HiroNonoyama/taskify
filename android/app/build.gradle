@@ -1,6 +1,9 @@
 apply plugin: "com.android.application"
 apply plugin: "com.facebook.react"
 
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle");
+applyNativeModulesAppBuildGradle(project)
+
 react {
     // Automatically link libraries discovered in node_modules.
 }

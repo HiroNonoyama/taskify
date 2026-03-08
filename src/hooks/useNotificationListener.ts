@@ -78,6 +78,11 @@ async function postPromptNotification(raw: RawNotification): Promise<void> {
   await notifee.displayNotification({
     title: `📋 タスクに追加しますか？`,
     body: `[${appLabel}] ${task.title}`,
+    // Embed the pending task so we can reconstruct it in the background handler
+    // without any shared state.
+    data: {
+      [PENDING_TASK_KEY]: JSON.stringify(task),
+    },
     android: {
       channelId: CHANNEL_ID,
       importance: AndroidImportance.HIGH,
@@ -93,11 +98,6 @@ async function postPromptNotification(raw: RawNotification): Promise<void> {
           pressAction: {id: ACTION_DISMISS},
         },
       ],
-      // Embed the pending task so we can reconstruct it in the background handler
-      // without any shared state.
-      data: {
-        [PENDING_TASK_KEY]: JSON.stringify(task),
-      },
     },
   });
 }
@@ -117,7 +117,7 @@ export function registerNotifeeBackgroundHandler(): void {
     }
 
     if (pressAction.id === ACTION_ADD) {
-      const raw = notification.android?.data?.[PENDING_TASK_KEY];
+      const raw = notification.data?.[PENDING_TASK_KEY];
       if (raw) {
         const task: Task = JSON.parse(raw as string);
         await addTask(task);
@@ -157,7 +157,7 @@ export function useNotifeeEvents(onTaskAdded?: (task: Task) => void): void {
       }
 
       if (pressAction.id === ACTION_ADD) {
-        const raw = notification.android?.data?.[PENDING_TASK_KEY];
+        const raw = notification.data?.[PENDING_TASK_KEY];
         if (raw) {
           const task: Task = JSON.parse(raw as string);
           await addTask(task);
@@ -192,12 +192,16 @@ export function registerNotificationHeadlessTask(): void {
   AppRegistry.registerHeadlessTask(
     RNAndroidNotificationListenerHeadlessJsName,
     () =>
-      async (notification: RawNotification) => {
-        // Skip Taskify's own prompt notifications to avoid infinite loops.
-        if (notification.app === 'com.taskify') {
+      async ({notification}: {notification: string}) => {
+        if (!notification) {
           return;
         }
-        await postPromptNotification(notification);
+        const raw: RawNotification = JSON.parse(notification);
+        // Skip Taskify's own prompt notifications to avoid infinite loops.
+        if (raw.app === 'com.taskify') {
+          return;
+        }
+        await postPromptNotification(raw);
       },
   );
 }
