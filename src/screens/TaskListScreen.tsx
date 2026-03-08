@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useCallback} from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,10 @@ import {
   StatusBar,
 } from 'react-native';
 import {useTasks} from '../hooks/useTasks';
-import {useNotificationListenerPermission} from '../hooks/useNotificationListener';
+import {
+  useNotificationListenerPermission,
+  useNotifeeEvents,
+} from '../hooks/useNotificationListener';
 import {TaskItem} from '../components/TaskItem';
 import {Task, TaskStatus} from '../types';
 
@@ -18,8 +21,18 @@ type FilterTab = 'active' | 'done' | 'archived';
 export function TaskListScreen() {
   useNotificationListenerPermission();
 
-  const {tasks, loading, setStatus, remove} = useTasks();
+  const {tasks, loading, add, setStatus, remove} = useTasks();
   const [filter, setFilter] = useState<FilterTab>('active');
+
+  // When the user taps [タスクに追加] while the app is in the foreground,
+  // useNotifeeEvents calls this callback so the list refreshes immediately.
+  const handleTaskAdded = useCallback(
+    (task: Task) => {
+      add(task);
+    },
+    [add],
+  );
+  useNotifeeEvents(handleTaskAdded);
 
   const visible = tasks.filter(t => t.status === filter);
 
@@ -43,7 +56,7 @@ export function TaskListScreen() {
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Taskify</Text>
         <Text style={styles.headerSub}>
-          Tap a notification-task to open the app
+          通知センターから明示的にタスクを追加できます
         </Text>
       </View>
 
@@ -61,8 +74,8 @@ export function TaskListScreen() {
         <View style={styles.empty}>
           <Text style={styles.emptyText}>
             {filter === 'active'
-              ? 'No active tasks.\nNotifications will appear here automatically.'
-              : `No ${filter} tasks.`}
+              ? 'タスクがありません。\n通知センターの [タスクに追加] をタップすると追加されます。'
+              : `${filter === 'done' ? '完了済み' : 'アーカイブ済み'}タスクはありません。`}
           </Text>
         </View>
       ) : (

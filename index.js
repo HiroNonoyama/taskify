@@ -5,13 +5,17 @@
 import {AppRegistry} from 'react-native';
 import App from './App';
 import {name as appName} from './app.json';
-import {registerNotificationHeadlessTask} from './src/hooks/useNotificationListener';
-import {addTask} from './src/storage/taskStorage';
+import {
+  registerNotificationHeadlessTask,
+  registerNotifeeBackgroundHandler,
+} from './src/hooks/useNotificationListener';
 
-// Register the headless JS task so that incoming notifications are persisted
-// to storage even when the app is in the background or closed.
-registerNotificationHeadlessTask(task => {
-  addTask(task);
-});
+// Handle Notifee action button presses while the app is in the background
+// or closed.  Must be called before AppRegistry.registerComponent.
+registerNotifeeBackgroundHandler();
+
+// Listen for incoming notifications and show a prompt notification so the
+// user can explicitly choose to add them as tasks.
+registerNotificationHeadlessTask();
 
 AppRegistry.registerComponent(appName, () => App);
