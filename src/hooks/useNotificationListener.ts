@@ -7,6 +7,7 @@ import notifee, {AndroidImportance, EventType} from '@notifee/react-native';
 import {Task, NotificationInfo} from '../types';
 import {v4 as uuidv4} from 'uuid';
 import {addTask} from '../storage/taskStorage';
+import {addNotification} from '../storage/notificationStorage';
 
 /** Payload shape from react-native-android-notification-listener */
 interface RawNotification {
@@ -201,10 +202,25 @@ export function registerNotificationHeadlessTask(): void {
         if (raw.app === 'com.taskify') {
           return;
         }
+        // Auto-save every incoming notification to the notification center.
+        const task = buildTaskFromRaw(raw);
+        await addNotification({
+          id: task.id,
+          receivedAt: task.createdAt,
+          notification: task.notification!,
+        });
         await postPromptNotification(raw);
       },
   );
 }
+
+// ─── Notification center refresh event ───────────────────────────────────────
+
+/**
+ * Key for the custom event fired when a new notification is captured,
+ * so the NotificationCenter UI can refresh without polling.
+ */
+export const NOTIFICATION_RECEIVED_EVENT = 'taskify:notificationReceived';
 
 // ─── Notification listener permission hook ───────────────────────────────────
 

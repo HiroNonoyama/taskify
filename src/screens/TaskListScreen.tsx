@@ -7,25 +7,33 @@ import {
   TouchableOpacity,
   SafeAreaView,
   StatusBar,
+  Alert,
 } from 'react-native';
 import {useTasks} from '../hooks/useTasks';
 import {
   useNotificationListenerPermission,
   useNotifeeEvents,
 } from '../hooks/useNotificationListener';
+import {useNotifications} from '../hooks/useNotifications';
 import {TaskItem} from '../components/TaskItem';
 import {Task, TaskStatus} from '../types';
+import {CapturedNotification} from '../storage/notificationStorage';
+import {v4 as uuidv4} from 'uuid';
 
-type FilterTab = 'active' | 'done' | 'archived';
+type FilterTab = 'notifications' | 'active' | 'done' | 'archived';
 
 export function TaskListScreen() {
   useNotificationListenerPermission();
 
-  const {tasks, loading, add, setStatus, remove} = useTasks();
-  const [filter, setFilter] = useState<FilterTab>('active');
+  const {tasks, loading: tasksLoading, add, setStatus, remove} = useTasks();
+  const {
+    notifications,
+    loading: notifLoading,
+    refresh: refreshNotifications,
+    clear: clearNotifications,
+  } = useNotifications();
+  const [filter, setFilter] = useState<FilterTab>('notifications');
 
-  // When the user taps [タスクに追加] while the app is in the foreground,
-  // useNotifeeEvents calls this callback so the list refreshes immediately.
   const handleTaskAdded = useCallback(
     (task: Task) => {
       add(task);
@@ -34,7 +42,35 @@ export function TaskListScreen() {
   );
   useNotifeeEvents(handleTaskAdded);
 
-  const visible = tasks.filter(t => t.status === filter);
+  // Refresh notification center when a prompt action adds a task in foreground.
+  const handleAddFromNotification = useCallback(
+    async (item: CapturedNotification) => {
+      const task: Task = {
+        id: uuidv4(),
+        title: item.notification.title,
+        body: item.notification.text,
+        status: 'active',
+        createdAt: Date.now(),
+        notification: item.notification,
+      };
+      await add(task);
+      setFilter('active');
+    },
+    [add],
+  );
+
+  const handleClearNotifications = useCallback(() => {
+    Alert.alert('通知センターをクリア', '通知履歴をすべて削除しますか？', [
+      {text: 'キャンセル', style: 'cancel'},
+      {
+        text: '削除',
+        style: 'destructive',
+        onPress: () => clearNotifications(),
+      },
+    ]);
+  }, [clearNotifications]);
+
+  const visibleTasks = tasks.filter(t => t.status === filter);
 
   function renderTab(tab: FilterTab, label: string) {
     const active = filter === tab;
@@ -42,13 +78,50 @@ export function TaskListScreen() {
       <TouchableOpacity
         key={tab}
         style={[styles.tab, active && styles.activeTab]}
-        onPress={() => setFilter(tab)}>
+        onPress={() => {
+          setFilter(tab);
+          if (tab === 'notifications') {
+            refreshNotifications();
+          }
+        }}>
         <Text style={[styles.tabText, active && styles.activeTabText]}>
           {label}
         </Text>
       </TouchableOpacity>
     );
   }
+
+  function renderNotificationItem({item}: {item: CapturedNotification}) {
+    const appLabel = item.notification.packageName.split('.').pop() ?? item.notification.packageName;
+    const time = new Date(item.receivedAt).toLocaleTimeString('ja-JP', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    return (
+      <View style={styles.notifCard}>
+        <View style={styles.notifHeader}>
+          <Text style={styles.notifApp}>{appLabel}</Text>
+          <Text style={styles.notifTime}>{time}</Text>
+        </View>
+        <Text style={styles.notifTitle} numberOfLines={1}>
+          {item.notification.title}
+        </Text>
+        {!!item.notification.text && (
+          <Text style={styles.notifBody} numberOfLines={2}>
+            {item.notification.text}
+          </Text>
+        )}
+        <TouchableOpacity
+          style={styles.addButton}
+          onPress={() => handleAddFromNotification(item)}>
+          <Text style={styles.addButtonText}>＋ タスクに追加</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const isNotificationTab = filter === 'notifications';
+  const loading = isNotificationTab ? notifLoading : tasksLoading;
 
   return (
     <SafeAreaView style={styles.safe}>
@@ -61,6 +134,7 @@ export function TaskListScreen() {
       </View>
 
       <View style={styles.tabBar}>
+        {renderTab('notifications', '通知')}
         {renderTab('active', 'Active')}
         {renderTab('done', 'Done')}
         {renderTab('archived', 'Archived')}
@@ -70,7 +144,29 @@ export function TaskListScreen() {
         <View style={styles.empty}>
           <Text style={styles.emptyText}>Loading…</Text>
         </View>
-      ) : visible.length === 0 ? (
+      ) : isNotificationTab ? (
+        notifications.length === 0 ? (
+          <View style={styles.empty}>
+            <Text style={styles.emptyText}>
+              他のアプリから通知が届くとここに表示されます。
+            </Text>
+          </View>
+        ) : (
+          <>
+            <FlatList<CapturedNotification>
+              data={notifications}
+              keyExtractor={item => item.id}
+              renderItem={renderNotificationItem}
+              contentContainerStyle={styles.list}
+            />
+            <TouchableOpacity
+              style={styles.clearButton}
+              onPress={handleClearNotifications}>
+              <Text style={styles.clearButtonText}>履歴をクリア</Text>
+            </TouchableOpacity>
+          </>
+        )
+      ) : visibleTasks.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>
             {filter === 'active'
@@ -80,7 +176,7 @@ export function TaskListScreen() {
         </View>
       ) : (
         <FlatList<Task>
-          data={visible}
+          data={visibleTasks}
           keyExtractor={item => item.id}
           renderItem={({item}) => (
             <TaskItem
@@ -137,7 +233,7 @@ const styles = StyleSheet.create({
     elevation: 1,
   },
   tabText: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#777',
     fontWeight: '500',
   },
@@ -146,6 +242,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   list: {
+    paddingHorizontal: 16,
     paddingBottom: 24,
   },
   empty: {
@@ -159,5 +256,64 @@ const styles = StyleSheet.create({
     color: '#aaa',
     textAlign: 'center',
     lineHeight: 24,
+  },
+  // Notification center card
+  notifCard: {
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    padding: 14,
+    marginBottom: 10,
+    elevation: 1,
+  },
+  notifHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
+  notifApp: {
+    fontSize: 11,
+    color: '#999',
+    fontWeight: '600',
+    textTransform: 'uppercase',
+  },
+  notifTime: {
+    fontSize: 11,
+    color: '#bbb',
+  },
+  notifTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#222',
+    marginBottom: 2,
+  },
+  notifBody: {
+    fontSize: 13,
+    color: '#555',
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  addButton: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 6,
+    marginTop: 4,
+  },
+  addButtonText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  clearButton: {
+    alignItems: 'center',
+    paddingVertical: 14,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: '#ddd',
+    backgroundColor: '#f5f5f5',
+  },
+  clearButtonText: {
+    fontSize: 14,
+    color: '#ff3b30',
   },
 });
